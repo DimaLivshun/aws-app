@@ -1,0 +1,77 @@
+openapi: 3.0.0
+info:
+  version: 1.0.0
+  title: Product Service API
+  description: API for managing products
+
+servers:
+  - url: https://zm5s4uijkh.execute-api.us-east-1.amazonaws.com/prod
+    description: Production server
+
+paths:
+  /products:
+    get:
+      summary: Get a list of products
+      description: Returns a list of products available in the store.
+      operationId: getProducts
+      x-amazon-apigateway-integration:
+        uri:
+          arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:831926580679:function:ProductServiceStack-getproductslistlambdafunction5-TGAgwYom88Vk/invocations
+        httpMethod: POST
+        type: aws_proxy
+      responses:
+        '200':
+          description: A list of products.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Product'
+        '500':
+          description: Internal server error.
+
+  /products/{id}:
+    get:
+      summary: Get product by ID
+      description: Returns a single product by its ID.
+      operationId: getProductById
+      x-amazon-apigateway-integration:
+        uri:
+          arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:831926580679:function:ProductServiceStack-getproductbyidlambdafunction4E-DUQk8Z0r9jnr/invocations
+        httpMethod: POST
+        type: aws_proxy
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The ID of the product to retrieve.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Product details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '404':
+          description: Product not found.
+        '500':
+          description: Internal server error.
+
+components:
+  schemas:
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        count:
+          type: integer
