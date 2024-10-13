@@ -1,14 +1,33 @@
-import {productsMock} from "../lib/product-service";
-import {wait} from "../shared/helper-functions";
-import {APIGatewayProxyResult} from "aws-lambda";
+import {DynamoDBClient, ScanCommand} from "@aws-sdk/client-dynamodb";
+import {APIGatewayProxyEvent} from "aws-lambda";
 
-export async function handler(): Promise<APIGatewayProxyResult> {
+const dynamoDB = new DynamoDBClient({ region: process.env.AWS_REGION });
+const tableName = process.env.TABLE_NAME as string;
+
+export async function handler(event: APIGatewayProxyEvent) {
   try {
-    await wait(500)
+    const command = new ScanCommand({
+      TableName: tableName,
+    });
+
+    console.log('event:', event)
+
+    const result = await dynamoDB.send(command)
+
+    const formattedItems = result.Items?.map(item => {
+      return {
+        id: item.id.S,
+        createdAt: item.createdAt.N,
+        count: item.count.N,
+        price: item.price.N,
+        title: item.title.S,
+        description: item.description.S,
+      }
+    });
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ products: productsMock }),
+      body: JSON.stringify(formattedItems),
     };
   } catch (error) {
     return {
@@ -17,3 +36,4 @@ export async function handler(): Promise<APIGatewayProxyResult> {
     };
   }
 };
+
