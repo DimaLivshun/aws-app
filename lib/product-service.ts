@@ -4,6 +4,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as path from 'path';
 import { Construct } from 'constructs';
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 
 interface Product {
   id: string;
@@ -12,6 +13,8 @@ interface Product {
   price: number;
   count: number;
 }
+
+const PRODUCTS_TABLE_NAME = 'Products'
 
 export const productsMock: readonly Product[]= [
   {
@@ -61,10 +64,21 @@ export class ProductServiceStack extends cdk.Stack {
       description: "This API serves the product lambda functions."
     });
 
+    const productsTable = new dynamodb.Table(this, PRODUCTS_TABLE_NAME, {
+      tableName: PRODUCTS_TABLE_NAME,
+      partitionKey: {
+        name: "id",
+        type: dynamodb.AttributeType.STRING,
+      },
+    });
+
     const getAllProductsLambdaFunction = new NodejsFunction(this, 'get-products-list-lambda-function', {
       runtime: lambda.Runtime.NODEJS_20_X,
       memorySize: 1024,
       timeout: cdk.Duration.seconds(5),
+      environment: {
+        TABLE_NAME: PRODUCTS_TABLE_NAME
+      },
       entry: path.join(__dirname, '../lambda/get-products-list-lambda.ts'),
     });
 
@@ -72,7 +86,20 @@ export class ProductServiceStack extends cdk.Stack {
       runtime: lambda.Runtime.NODEJS_20_X,
       memorySize: 1024,
       timeout: cdk.Duration.seconds(5),
+      environment: {
+        TABLE_NAME: PRODUCTS_TABLE_NAME
+      },
       entry: path.join(__dirname, '../lambda/get-product-by-id-lambda.ts'),
+    });
+
+    const createProductLambdaFunction = new NodejsFunction(this, 'create-product-lambda-function', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      memorySize: 1024,
+      timeout: cdk.Duration.seconds(5),
+      environment: {
+        TABLE_NAME: PRODUCTS_TABLE_NAME
+      },
+      entry: path.join(__dirname, '../lambda/create-product-lambda.ts'),
     });
 
     const allProductsLambdaIntegration = new apigateway.LambdaIntegration(getAllProductsLambdaFunction, {
@@ -93,10 +120,23 @@ export class ProductServiceStack extends cdk.Stack {
       proxy: true,
     });
 
+    const createProductLambdaIntegration = new apigateway.LambdaIntegration(createProductLambdaFunction, {
+      integrationResponses: [
+        {
+          statusCode: '200',
+        }
+      ],
+      proxy: true,
+    });
+
     const allProductsResource = api.root.addResource("products");
     const productByIDResource = allProductsResource.addResource('{id}');
 
     allProductsResource.addMethod('GET', allProductsLambdaIntegration, {
+      methodResponses: [{ statusCode: '200' }],
+    });
+
+    allProductsResource.addMethod('POST', createProductLambdaIntegration, {
       methodResponses: [{ statusCode: '200' }],
     });
 
@@ -108,5 +148,9 @@ export class ProductServiceStack extends cdk.Stack {
       allowOrigins: ['https://dw4y2wj894dn8.cloudfront.net'],
       allowMethods: ['GET'],
     });
+
+    productsTable.grantWriteData(createProductLambdaFunction);
+    productsTable.grantReadData(getAllProductsLambdaFunction);
+    productsTable.grantReadData(getProductByIDLambdaFunction);
   }
 }
