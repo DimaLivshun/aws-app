@@ -5,6 +5,7 @@ import { DeployWebAppStack } from "../lib/deploy-web-app-stack";
 import {LambdaStack} from "../lib/lambda-stack";
 import {ProductServiceStack} from "../lib/product-service";
 import {TodoStack} from "../lib/todo/TodoStack";
+import {ImportServiceStack} from "../lib/import-service-stack";
 
 const app = new cdk.App();
 new DeployWebAppStack(app, "DeployWebAppStack", {
@@ -25,3 +26,5 @@ new LambdaStack(app, 'LambdaStack', {});
 new TodoStack(app, 'TodoStack');
 
 new ProductServiceStack(app, 'ProductServiceStack', {})
+
+new ImportServiceStack(app, 'ImportServiceStack', {})
