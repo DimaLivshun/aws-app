@@ -5,6 +5,10 @@ import * as path from 'path';
 import { Construct } from 'constructs';
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import { Queue } from "aws-cdk-lib/aws-sqs";
+import {SqsEventSource} from "aws-cdk-lib/aws-lambda-event-sources";
+import { Topic } from 'aws-cdk-lib/aws-sns';
+import {EmailSubscription} from "aws-cdk-lib/aws-sns-subscriptions";
 
 interface Product {
   id: string;
@@ -58,6 +62,10 @@ export class ProductServiceStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
+    const snsTopic = new Topic(this, 'products-service-sns-topic', {
+      displayName: 'products-service-sns-topic',
+    });
+
     const api = new apigateway.SpecRestApi(this, "products-api", {
       apiDefinition: apigateway.ApiDefinition.fromAsset(path.join(__dirname, '../swagger.yaml')),
       restApiName: "API Gateway for product service",
@@ -71,6 +79,8 @@ export class ProductServiceStack extends cdk.Stack {
         type: dynamodb.AttributeType.STRING,
       },
     });
+
+    const catalogItemsSQSQueue = new Queue(this, "catalog-items-sqs-queue");
 
     const getAllProductsLambdaFunction = new NodejsFunction(this, 'get-products-list-lambda-function', {
       runtime: lambda.Runtime.NODEJS_20_X,
@@ -100,6 +110,17 @@ export class ProductServiceStack extends cdk.Stack {
         TABLE_NAME: PRODUCTS_TABLE_NAME
       },
       entry: path.join(__dirname, '../lambda/create-product-lambda.ts'),
+    });
+
+    const catalogBatchProcessLambdaFunction = new NodejsFunction(this, 'catalog-batch-process-lambda-function', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      memorySize: 1024,
+      timeout: cdk.Duration.seconds(5),
+      environment: {
+        TABLE_NAME: PRODUCTS_TABLE_NAME,
+        SNS_TOPIC_ARN: snsTopic.topicArn,
+      },
+      entry: path.join(__dirname, '../lambda/catalog-batch-process-lambda.ts'),
     });
 
     const allProductsLambdaIntegration = new apigateway.LambdaIntegration(getAllProductsLambdaFunction, {
@@ -152,5 +173,13 @@ export class ProductServiceStack extends cdk.Stack {
     productsTable.grantWriteData(createProductLambdaFunction);
     productsTable.grantReadData(getAllProductsLambdaFunction);
     productsTable.grantReadData(getProductByIDLambdaFunction);
+    productsTable.grantWriteData(catalogBatchProcessLambdaFunction);
+
+    catalogBatchProcessLambdaFunction.addEventSource(new SqsEventSource(catalogItemsSQSQueue, {
+      batchSize: 5,
+    }));
+
+    snsTopic.addSubscription(new EmailSubscription(''));
+    snsTopic.grantPublish(catalogBatchProcessLambdaFunction);
   }
 }

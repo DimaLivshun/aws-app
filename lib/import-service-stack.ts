@@ -8,6 +8,9 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as path from 'path';
 import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import * as s3Notifications from 'aws-cdk-lib/aws-s3-notifications';
+import {SqsEventSource} from "aws-cdk-lib/aws-lambda-event-sources";
+import {Queue} from "aws-cdk-lib/aws-sqs";
+import {EmailSubscription} from "aws-cdk-lib/aws-sns-subscriptions";
 
 export class ImportServiceStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -17,6 +20,8 @@ export class ImportServiceStack extends cdk.Stack {
       versioned: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
+
+    const catalogItemsSQSQueue = new Queue(this, "catalog-items-sqs-queue");
 
     const api = new apigateway.SpecRestApi(this, "files-api", {
       apiDefinition: apigateway.ApiDefinition.fromAsset(path.join(__dirname, '../swagger.yaml')),
@@ -41,6 +46,7 @@ export class ImportServiceStack extends cdk.Stack {
       entry: path.join(__dirname, '../lambda/import-file-parser-lambda.ts'),
       environment: {
         BUCKET_NAME: productsFileBucket.bucketName,
+        SQS_QUEUE_URL: catalogItemsSQSQueue.queueUrl
       },
     });
 
@@ -84,5 +90,7 @@ export class ImportServiceStack extends cdk.Stack {
       allowOrigins: ['https://dw4y2wj894dn8.cloudfront.net'],
       allowMethods: ['GET'],
     });
+
+    catalogItemsSQSQueue.grantSendMessages(importFileParserLambdaFunction);
   }
 }
