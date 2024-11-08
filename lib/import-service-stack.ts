@@ -1,4 +1,3 @@
-// Filename: hello-s3-stack.ts
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
@@ -6,15 +5,17 @@ import {NodejsFunction} from "aws-cdk-lib/aws-lambda-nodejs";
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as path from 'path';
-import * as apigateway from "aws-cdk-lib/aws-apigateway";
+import * as apiGateway from "aws-cdk-lib/aws-apigateway";
 import * as s3Notifications from 'aws-cdk-lib/aws-s3-notifications';
-import {SqsEventSource} from "aws-cdk-lib/aws-lambda-event-sources";
 import {Queue} from "aws-cdk-lib/aws-sqs";
-import {EmailSubscription} from "aws-cdk-lib/aws-sns-subscriptions";
 
 export class ImportServiceStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+
+    const githubLogin = process.env.GITHUB_LOGIN;
+    const testPass = process.env.TEST_PASS;
+    const credentials = `${githubLogin}=${testPass}`;
 
     const productsFileBucket = new s3.Bucket(this, 'products-file-bucket', {
       versioned: true,
@@ -23,8 +24,8 @@ export class ImportServiceStack extends cdk.Stack {
 
     const catalogItemsSQSQueue = new Queue(this, "catalog-items-sqs-queue");
 
-    const api = new apigateway.SpecRestApi(this, "files-api", {
-      apiDefinition: apigateway.ApiDefinition.fromAsset(path.join(__dirname, '../swagger.yaml')),
+    const api = new apiGateway.SpecRestApi(this, "files-api", {
+      apiDefinition: apiGateway.ApiDefinition.fromAsset(path.join(__dirname, '../swagger.yaml')),
       restApiName: "API Gateway for import service",
       description: "This API serves the import lambda functions."
     });
@@ -50,6 +51,16 @@ export class ImportServiceStack extends cdk.Stack {
       },
     });
 
+    const basicAuthorizerLambdaFunction = new NodejsFunction(this, 'basic-authorizer-lambda-function', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      memorySize: 1024,
+      timeout: cdk.Duration.seconds(5),
+      environment: {
+        CREDENTIALS: credentials
+      },
+      entry: path.join(__dirname, '../lambda/basic-authorizer-lambda.ts'),
+    });
+
     productsFileBucket.grantRead(importProductsFileLambdaFunction)
     productsFileBucket.grantRead(importFileParserLambdaFunction)
 
@@ -67,7 +78,7 @@ export class ImportServiceStack extends cdk.Stack {
       { prefix: 'uploaded/' }
     );
 
-    const importProductsFileLambdaIntegration = new apigateway.LambdaIntegration(importProductsFileLambdaFunction, {
+    const importProductsFileLambdaIntegration = new apiGateway.LambdaIntegration(importProductsFileLambdaFunction, {
       requestTemplates: {
         "application/json":
           `{ "fileName": "$input.params('fileName')", "ext": "$input.params('ext')" }`
@@ -82,8 +93,15 @@ export class ImportServiceStack extends cdk.Stack {
 
     const importsResource  = api.root.addResource("import");
 
+    const lambdaAuthorizer = new apiGateway.TokenAuthorizer(this, 'LambdaAuthorizer', {
+      handler: basicAuthorizerLambdaFunction,
+      identitySource: 'method.request.header.Authorization',
+    });
+
     importsResource.addMethod('GET', importProductsFileLambdaIntegration, {
       methodResponses: [{ statusCode: '200' }],
+      authorizer: lambdaAuthorizer,
+      authorizationType: apiGateway.AuthorizationType.CUSTOM,
     });
 
     importsResource.addCorsPreflight({
